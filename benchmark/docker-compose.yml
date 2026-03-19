@@ -1,0 +1,65 @@
+version: "3.8"
+
+services:
+  graph-node:
+    image: graphprotocol/graph-node:v0.35.1
+    container_name: benchmark-graph-node
+    ports:
+      - "8000:8000" # GraphQL HTTP
+      - "8001:8001" # GraphQL WS
+      - "8020:8020" # JSON-RPC (deploy)
+      - "8030:8030" # Subgraph indexing status
+      - "8040:8040" # Prometheus metrics
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ipfs:
+        condition: service_started
+    environment:
+      postgres_host: postgres
+      postgres_user: graph-node
+      postgres_pass: let-me-in
+      postgres_db: graph-node
+      ipfs: "ipfs:5001"
+      ethereum: "${ETHEREUM_NETWORK:-arbitrum-one}:${ETHEREUM_RPC:-https://arb1.arbitrum.io/rpc}"
+      GRAPH_LOG: info
+      GRAPH_ETHEREUM_CLEANUP_BLOCKS: 1000
+      # Expose Prometheus metrics
+      GRAPH_ALLOW_NON_DETERMINISTIC_FULLTEXT_SEARCH: "true"
+    restart: unless-stopped
+
+  ipfs:
+    image: ipfs/kubo:v0.14.0
+    container_name: benchmark-ipfs
+    ports:
+      - "5001:5001"
+    volumes:
+      - ipfs_data:/data/ipfs
+
+  postgres:
+    image: postgres:15
+    container_name: benchmark-postgres
+    ports:
+      - "5432:5432"
+    command:
+      [
+        "postgres",
+        "-cshared_preload_libraries=pg_stat_statements",
+        "-cpg_stat_statements.track=all",
+      ]
+    environment:
+      POSTGRES_USER: graph-node
+      POSTGRES_PASSWORD: let-me-in
+      POSTGRES_DB: graph-node
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U graph-node"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ipfs_data:
+  postgres_data:
